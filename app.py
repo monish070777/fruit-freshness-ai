@@ -1,4 +1,4 @@
-```python
+
 import streamlit as st
 import torch
 import torchvision.transforms as transforms
@@ -123,4 +123,5 @@ if camera_image is not None:
 
         st.progress(min(int(conf),100))
         st.write(f"Confidence: **{conf:.2f}%**")
-```
+
+
