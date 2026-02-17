@@ -1,100 +1,126 @@
+```python
 import streamlit as st
 import torch
 import torchvision.transforms as transforms
 from torchvision import models
 from PIL import Image
 import torch.nn.functional as F
+import os
+import gdown
 
-# -----------------------------
-# Page Config
-# -----------------------------
-st.set_page_config(page_title="Fruit Freshness Detector", layout="centered")
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
+st.set_page_config(page_title="Fruit Freshness AI", page_icon="🍎", layout="centered")
 
-st.title("🍎 Fruit Freshness Detection AI")
-st.write("Upload a fruit image and the AI will detect whether it is **Fresh or Rotten**")
+# --------------------------------------------------
+# DOWNLOAD MODEL (FIRST RUN ONLY)
+# --------------------------------------------------
+MODEL_PATH = "resnet18fruit_V001.pth"
+FILE_ID = "13_u1jqh0jxxzmy3wegO7NFv8mmtr6xgw"
 
-# -----------------------------
-# Classes
-# -----------------------------
-classes = [
-    'freshapples', 'freshbanana', 'freshoranges',
-    'rottenapples', 'rottenbanana', 'rottenoranges'
-]
+if not os.path.exists(MODEL_PATH):
+    with st.spinner("Downloading AI model... please wait ⏳ (first run only)"):
+        url = f"https://drive.google.com/uc?id={FILE_ID}"
+        gdown.download(url, MODEL_PATH, quiet=False)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# --------------------------------------------------
+# UI STYLE
+# --------------------------------------------------
+st.markdown("""
+<style>
+.main-title{text-align:center;font-size:38px;font-weight:700;color:#2E7D32;}
+.sub{text-align:center;color:gray;margin-bottom:25px;}
+.card{padding:18px;border-radius:18px;background:#f7f7f7;box-shadow:0 4px 15px rgba(0,0,0,0.08);}
+.result-good{padding:20px;border-radius:15px;background:#e8f5e9;color:#1b5e20;font-size:24px;text-align:center;font-weight:700;}
+.result-bad{padding:20px;border-radius:15px;background:#ffebee;color:#b71c1c;font-size:24px;text-align:center;font-weight:700;}
+</style>
+""", unsafe_allow_html=True)
 
-# -----------------------------
-# Load Model (cached so reload fast)
-# -----------------------------
+st.markdown("<div class='main-title'>🍎 Fruit Freshness Detector</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub'>Take photo and detect Fresh or Rotten</div>", unsafe_allow_html=True)
+
+# --------------------------------------------------
+# MODEL LOAD
+# --------------------------------------------------
+classes = ['freshapples','freshbanana','freshoranges','rottenapples','rottenbanana','rottenoranges']
+device = torch.device("cpu")
+
 @st.cache_resource
 def load_model():
-    model = models.resnet18(pretrained=False)
-    model.load_state_dict(torch.load("resnet18fruit_V001.pth", map_location=device))
+    model = models.resnet18(weights=None)
+    state_dict = torch.load(MODEL_PATH, map_location=device)
+
+    new_state_dict={}
+    for k,v in state_dict.items():
+        new_state_dict[k.replace("module.","")] = v
+
+    model.load_state_dict(new_state_dict, strict=False)
     model.to(device)
     model.eval()
     return model
 
 model = load_model()
 
-# -----------------------------
-# Image Transform
-# -----------------------------
+# --------------------------------------------------
+# TRANSFORM
+# --------------------------------------------------
 transform = transforms.Compose([
     transforms.Resize((128,128)),
     transforms.ToTensor(),
     transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
 ])
 
-# -----------------------------
-# Prediction Function
-# -----------------------------
 def predict(img):
-    img = img.convert('RGB')
-    img_tensor = transform(img).unsqueeze(0).to(device)
+    img = img.convert("RGB")
+    tensor = transform(img).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        outputs = model(img_tensor)
+        outputs = model(tensor)
         probs = F.softmax(outputs, dim=1)
         confidence, predicted = torch.max(probs,1)
 
     idx = predicted.item()
-
     if idx >= len(classes):
-        return "Unknown", 0.0, "Unknown"
+        return "Unknown",0,"Unknown"
 
     label = classes[idx]
-    confidence = confidence.item()*100
+    conf = confidence.item()*100
 
-    # Extract freshness
-    if "fresh" in label:
-        freshness = "Fresh"
-    else:
-        freshness = "Rotten"
+    freshness = "Fresh" if "fresh" in label else "Rotten"
+    fruit = label.replace("fresh","").replace("rotten","").capitalize()
 
-    # Extract fruit name
-    fruit_name = label.replace("fresh","").replace("rotten","")
+    return fruit, conf, freshness
 
-    return fruit_name.capitalize(), confidence, freshness
+# --------------------------------------------------
+# INPUT
+# --------------------------------------------------
+st.markdown("### Select Fruit")
+fruit_choice = st.selectbox("",["Apple","Banana","Orange"])
 
-# -----------------------------
-# Upload UI
-# -----------------------------
-uploaded_file = st.file_uploader("Upload Fruit Image", type=["jpg","png","jpeg"])
+st.markdown("### Capture Image")
+camera_image = st.camera_input("Take a picture")
 
-if uploaded_file is not None:
+# --------------------------------------------------
+# PREDICTION
+# --------------------------------------------------
+if camera_image is not None:
+    image = Image.open(camera_image)
 
-    image = Image.open(uploaded_file)
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.image(image, use_column_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.image(image, caption="Uploaded Image", use_column_width=True)
-
-    if st.button("Detect Freshness"):
+    if st.button("🔍 Analyze Freshness", use_container_width=True):
         fruit, conf, freshness = predict(image)
 
-        st.subheader("Prediction Result")
+        st.markdown("## Result")
 
-        if freshness == "Fresh":
-            st.success(f"{fruit} is FRESH ✅")
+        if freshness=="Fresh":
+            st.markdown(f"<div class='result-good'>✅ {fruit} is FRESH</div>", unsafe_allow_html=True)
         else:
-            st.error(f"{fruit} is ROTTEN ❌")
+            st.markdown(f"<div class='result-bad'>❌ {fruit} is ROTTEN</div>", unsafe_allow_html=True)
 
+        st.progress(min(int(conf),100))
         st.write(f"Confidence: **{conf:.2f}%**")
+```
