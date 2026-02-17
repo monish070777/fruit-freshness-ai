@@ -2,7 +2,7 @@ numpy>=1.23
 pandas>=1.5
 matplotlib>=3.7
 seaborn>=0.12
-
+gdown
 scikit-learn>=1.2
 
 Pillow>=9.5
@@ -16,3 +16,4 @@ tqdm>=4.65
 
 jupyter>=1.0
 notebook>=7.0
+
